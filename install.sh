@@ -241,32 +241,36 @@ install_dependencies() {
 
 install_firmware() {
     print_step "Installing firmware..."
-    
-    local fw_source="${SCRIPT_DIR}/fw/aic8800D80"
-    local fw_dest="/lib/firmware/aic8800D80"
-    
-    if [ ! -d "$fw_source" ]; then
-        print_error "Firmware directory not found: $fw_source"
+
+    local fw_base="${SCRIPT_DIR}/fw"
+
+    if [ ! -d "$fw_base" ]; then
+        print_error "Firmware directory not found: $fw_base"
         echo "Please ensure you're running the script from the repository root."
         exit 1
     fi
-    
+
     # Remove old firmware versions
-    if [ -d "$fw_dest" ]; then
+    if [ -d "/lib/firmware" ] && [ -n "$(find /lib/firmware -maxdepth 1 -name 'aic8800*' -type d 2>/dev/null)" ]; then
         print_info "Removing existing firmware..."
-        if [ -d "/lib/firmware" ] && [ -n "$(find /lib/firmware -maxdepth 1 -name 'aic8800*' -type d 2>/dev/null)" ]; then
-            rm -rf /lib/firmware/aic8800* >> "$LOG_FILE" 2>&1
-        fi
+        rm -rf /lib/firmware/aic8800* >> "$LOG_FILE" 2>&1
     fi
-    
-    # Copy new firmware
-    print_info "Copying firmware to $fw_dest..."
-    cp -r "$fw_source" "$fw_dest" >> "$LOG_FILE" 2>&1
-    
+
+    # Copy all firmware variants
+    print_info "Installing firmware for all chip variants..."
+    for fw_dir in "$fw_base"/aic8800*; do
+        if [ -d "$fw_dir" ]; then
+            local fw_name=$(basename "$fw_dir")
+            local fw_dest="/lib/firmware/$fw_name"
+            print_info "Copying $fw_name firmware to $fw_dest..."
+            cp -r "$fw_dir" "$fw_dest" >> "$LOG_FILE" 2>&1
+        fi
+    done
+
     # Install udev rules
     local rules_source="${SCRIPT_DIR}/aic.rules"
     local rules_dest="/usr/lib/udev/rules.d/aic.rules"
-    
+
     if [ -f "$rules_source" ]; then
         print_info "Installing udev rules to $rules_dest..."
         cp "$rules_source" "$rules_dest" >> "$LOG_FILE" 2>&1
@@ -277,7 +281,20 @@ install_firmware() {
     else
         print_warning "Udev rules file not found: $rules_source"
     fi
-    
+
+    # Install usb_modeswitch configuration for AIC8800D80 "Pandora" clone
+    local modeswitch_source="${SCRIPT_DIR}/usb_modeswitch/1111_1111"
+    local modeswitch_dest="/etc/usb_modeswitch.d/1111:1111"
+
+    if [ -f "$modeswitch_source" ]; then
+        print_info "Installing usb_modeswitch configuration to $modeswitch_dest..."
+        mkdir -p /etc/usb_modeswitch.d >> "$LOG_FILE" 2>&1 || true
+        cp "$modeswitch_source" "$modeswitch_dest" >> "$LOG_FILE" 2>&1
+        print_success "USB modeswitch configuration installed successfully."
+    else
+        print_warning "USB modeswitch configuration file not found: $modeswitch_source"
+    fi
+
     print_success "Firmware installed successfully."
 }
 
@@ -444,10 +461,18 @@ verify_installation() {
     fi
     
     # Check firmware
-    if [ -d "/lib/firmware/aic8800D80" ]; then
-        print_success "Firmware installed in /lib/firmware/aic8800D80"
+    local fw_count=0
+    for fw_dir in /lib/firmware/aic8800*; do
+        if [ -d "$fw_dir" ]; then
+            ((fw_count++))
+        fi
+    done
+    if [ $fw_count -gt 0 ]; then
+        print_success "Firmware installed for $fw_count chip variant(s) in /lib/firmware/"
+    else
+        print_warning "No firmware found in /lib/firmware/"
     fi
-    
+
     # Check for wireless interfaces
     print_info "Checking for wireless interfaces..."
     if command -v iwconfig &> /dev/null; then
