@@ -1758,7 +1758,11 @@ static int aicwf_usb_probe(struct usb_interface *intf, const struct usb_device_i
 
     aic_bt_platform_init(usb_dev);
 
-    if ((usb->speed != USB_SPEED_HIGH) && (usb->speed != USB_SPEED_SUPER)) {
+    if ((usb->speed != USB_SPEED_HIGH) && (usb->speed != USB_SPEED_SUPER)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
+        && (usb->speed != USB_SPEED_SUPER_PLUS)
+#endif
+        ) {
         printk("Aic USB device detected speed = %d\n", usb->speed);
         system_reboot(usb_dev);
         goto out_free_bus;
